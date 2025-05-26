@@ -1,14 +1,11 @@
-#define GLFW_INCLUDE_VULKAN
+#include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
-
 #include <iostream>
-#include <stdexcept>
 #include <vector>
-#include <string>
+#include <stdexcept>
+#include <cstring>
 #include <optional>
 #include <set>
-#include <algorithm>
-#include <cstring>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -18,43 +15,12 @@ const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
 
-const std::vector<const char*> deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME
-};
-
-#ifdef NDEBUG
-    const bool enableValidationLayers = false;
+#ifdef DEBUG
+const bool enableValidationLayers = true;
 #else
-    const bool enableValidationLayers = true;
+const bool enableValidationLayers = false;
 #endif
 
-// Helper function to check validation layer support
-bool checkValidationLayerSupport() {
-    uint32_t layerCount;
-    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-
-    std::vector<VkLayerProperties> availableLayers(layerCount);
-    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-
-    for (const char* layerName : validationLayers) {
-        bool layerFound = false;
-
-        for (const auto& layerProperties : availableLayers) {
-            if (strcmp(layerName, layerProperties.layerName) == 0) {
-                layerFound = true;
-                break;
-            }
-        }
-
-        if (!layerFound) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-// Structure to hold queue family indices
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
@@ -64,14 +30,7 @@ struct QueueFamilyIndices {
     }
 };
 
-// Structure to hold swap chain support details
-struct SwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR capabilities;
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> presentModes;
-};
-
-class VulkanApplication {
+class VulkanTutorial02 {
 public:
     void run() {
         initWindow();
@@ -82,19 +41,18 @@ public:
 
 private:
     GLFWwindow* window;
+    
+    // Vulkan core objects
     VkInstance instance;
-    VkSurfaceKHR surface;
-    
-    // Physical device (GPU)
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    // Logical device
     VkDevice device;
-    
-    // Queue handles
     VkQueue graphicsQueue;
     VkQueue presentQueue;
     
-    // Command pool and buffers
+    // Surface for presentation
+    VkSurfaceKHR surface;
+    
+    // Command objects
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
     
@@ -103,18 +61,23 @@ private:
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
     
-    uint32_t currentFrame = 0;
+    size_t currentFrame = 0;
 
     void initWindow() {
+        std::cout << "1. Initializing GLFW window..." << std::endl;
+        
         glfwInit();
-
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
-        window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Tutorial 02", nullptr, nullptr);
+        
+        window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Tutorial 02 - Core Concepts", nullptr, nullptr);
+        
+        std::cout << "   ✓ GLFW window created successfully" << std::endl;
     }
 
     void initVulkan() {
+        std::cout << "\n2. Initializing Vulkan..." << std::endl;
+        
         createInstance();
         createSurface();
         pickPhysicalDevice();
@@ -122,51 +85,17 @@ private:
         createCommandPool();
         createCommandBuffers();
         createSyncObjects();
-    }
-
-    void mainLoop() {
-        while (!glfwWindowShouldClose(window)) {
-            glfwPollEvents();
-            // Our demo doesn't do any actual rendering, but we'll demonstrate command buffer submission and synchronization
-            demoCommandBufferSubmission();
-        }
         
-        // Wait for the device to finish operations before cleanup
-        vkDeviceWaitIdle(device);
-    }
-
-    void cleanup() {
-        // Clean up synchronization objects
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-            vkDestroyFence(device, inFlightFences[i], nullptr);
-        }
-        
-        // Clean up command pool (this also destroys the command buffers)
-        vkDestroyCommandPool(device, commandPool, nullptr);
-        
-        // Clean up logical device
-        vkDestroyDevice(device, nullptr);
-        
-        // Clean up surface
-        vkDestroySurfaceKHR(instance, surface, nullptr);
-        
-        // Clean up instance
-        vkDestroyInstance(instance, nullptr);
-
-        // Clean up GLFW
-        glfwDestroyWindow(window);
-        glfwTerminate();
+        std::cout << "   ✓ Vulkan initialization complete" << std::endl;
     }
 
     void createInstance() {
-        // Check validation layer support if requested
+        std::cout << "   Creating Vulkan instance..." << std::endl;
+        
         if (enableValidationLayers && !checkValidationLayerSupport()) {
             throw std::runtime_error("Validation layers requested, but not available!");
         }
 
-        // Application info
         VkApplicationInfo appInfo{};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         appInfo.pApplicationName = "Vulkan Tutorial 02";
@@ -175,19 +104,14 @@ private:
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.apiVersion = VK_API_VERSION_1_0;
 
-        // Instance creation info
         VkInstanceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         createInfo.pApplicationInfo = &appInfo;
 
-        // Get required extensions for GLFW
-        uint32_t glfwExtensionCount = 0;
-        const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+        auto extensions = getRequiredExtensions();
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+        createInfo.ppEnabledExtensionNames = extensions.data();
 
-        createInfo.enabledExtensionCount = glfwExtensionCount;
-        createInfo.ppEnabledExtensionNames = glfwExtensions;
-
-        // Validation layers (if enabled)
         if (enableValidationLayers) {
             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
             createInfo.ppEnabledLayerNames = validationLayers.data();
@@ -195,75 +119,26 @@ private:
             createInfo.enabledLayerCount = 0;
         }
 
-        // Create the instance
         if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create Vulkan instance!");
+            throw std::runtime_error("Failed to create instance!");
         }
         
-        std::cout << "Vulkan instance created successfully!" << std::endl;
+        std::cout << "     ✓ Vulkan instance created" << std::endl;
     }
 
     void createSurface() {
+        std::cout << "   Creating window surface..." << std::endl;
+        
         if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create window surface!");
         }
         
-        std::cout << "Window surface created successfully!" << std::endl;
-    }
-
-    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
-        QueueFamilyIndices indices;
-
-        uint32_t queueFamilyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-
-        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-
-        int i = 0;
-        for (const auto& queueFamily : queueFamilies) {
-            // Check for graphics support
-            if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                indices.graphicsFamily = i;
-            }
-
-            // Check for presentation support
-            VkBool32 presentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-            if (presentSupport) {
-                indices.presentFamily = i;
-            }
-
-            if (indices.isComplete()) {
-                break;
-            }
-
-            i++;
-        }
-
-        return indices;
-    }
-
-    bool isDeviceSuitable(VkPhysicalDevice device) {
-        QueueFamilyIndices indices = findQueueFamilies(device);
-
-        // Check for extension support
-        uint32_t extensionCount;
-        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
-
-        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
-
-        std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
-
-        for (const auto& extension : availableExtensions) {
-            requiredExtensions.erase(extension.extensionName);
-        }
-
-        return indices.isComplete() && requiredExtensions.empty();
+        std::cout << "     ✓ Window surface created" << std::endl;
     }
 
     void pickPhysicalDevice() {
+        std::cout << "   Selecting physical device..." << std::endl;
+        
         uint32_t deviceCount = 0;
         vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
@@ -274,7 +149,6 @@ private:
         std::vector<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
-        // Pick the first suitable device
         for (const auto& device : devices) {
             if (isDeviceSuitable(device)) {
                 physicalDevice = device;
@@ -286,14 +160,15 @@ private:
             throw std::runtime_error("Failed to find a suitable GPU!");
         }
         
-        // Print physical device info
+        // Print device properties
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
-        
-        std::cout << "Physical device selected: " << deviceProperties.deviceName << std::endl;
+        std::cout << "     ✓ Selected device: " << deviceProperties.deviceName << std::endl;
     }
 
     void createLogicalDevice() {
+        std::cout << "   Creating logical device..." << std::endl;
+        
         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
@@ -309,19 +184,15 @@ private:
             queueCreateInfos.push_back(queueCreateInfo);
         }
 
-        // Specify device features
         VkPhysicalDeviceFeatures deviceFeatures{};
 
-        // Create the logical device
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
         createInfo.pQueueCreateInfos = queueCreateInfos.data();
         createInfo.pEnabledFeatures = &deviceFeatures;
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-        createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+        createInfo.enabledExtensionCount = 0;
 
-        // Enable validation layers if requested
         if (enableValidationLayers) {
             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
             createInfo.ppEnabledLayerNames = validationLayers.data();
@@ -329,54 +200,54 @@ private:
             createInfo.enabledLayerCount = 0;
         }
 
-        // Create the logical device
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create logical device!");
         }
 
-        // Get queue handles
         vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
         vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
         
-        std::cout << "Logical device created successfully!" << std::endl;
-        std::cout << "Queue families - Graphics: " << indices.graphicsFamily.value() 
-                  << ", Present: " << indices.presentFamily.value() << std::endl;
+        std::cout << "     ✓ Logical device created with graphics and present queues" << std::endl;
     }
 
     void createCommandPool() {
+        std::cout << "   Creating command pool..." << std::endl;
+        
         QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
 
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
         poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
 
         if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create command pool!");
         }
         
-        std::cout << "Command pool created successfully!" << std::endl;
+        std::cout << "     ✓ Command pool created" << std::endl;
     }
 
     void createCommandBuffers() {
+        std::cout << "   Creating command buffers..." << std::endl;
+        
         commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.commandPool = commandPool;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
+        allocInfo.commandBufferCount = (uint32_t) commandBuffers.size();
 
         if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
             throw std::runtime_error("Failed to allocate command buffers!");
         }
         
-        std::cout << "Command buffers allocated successfully!" << std::endl;
-        
-        // In this tutorial, we won't record any commands yet, as we're just focusing on setup
+        std::cout << "     ✓ " << commandBuffers.size() << " command buffers allocated" << std::endl;
     }
 
     void createSyncObjects() {
+        std::cout << "   Creating synchronization objects..." << std::endl;
+        
         imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
@@ -386,7 +257,7 @@ private:
 
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Create the fence in signaled state so we don't wait indefinitely on the first frame
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
@@ -396,64 +267,208 @@ private:
             }
         }
         
-        std::cout << "Synchronization objects created successfully!" << std::endl;
+        std::cout << "     ✓ Synchronization objects created (semaphores and fences)" << std::endl;
     }
 
-    void demoCommandBufferSubmission() {
+    void mainLoop() {
+        std::cout << "\n3. Starting main loop..." << std::endl;
+        std::cout << "   Demonstrating command buffer submission with synchronization" << std::endl;
+        
+        int frameCount = 0;
+        while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents();
+            drawFrame();
+            
+            frameCount++;
+            if (frameCount % 60 == 0) {
+                std::cout << "   Frame " << frameCount << " - Command buffer submitted successfully" << std::endl;
+            }
+        }
+
+        vkDeviceWaitIdle(device);
+        std::cout << "   ✓ Main loop completed, device idle" << std::endl;
+    }
+
+    void drawFrame() {
         // Wait for the previous frame to finish
         vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-        
-        // Record a simple command buffer that doesn't do anything
-        vkResetCommandBuffer(commandBuffers[currentFrame], 0);
-        
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        
-        if (vkBeginCommandBuffer(commandBuffers[currentFrame], &beginInfo) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to begin recording command buffer!");
-        }
-        
-        // Here you would normally record rendering commands
-        // But since this is just a demo of command submission, we'll leave it empty
-        
-        if (vkEndCommandBuffer(commandBuffers[currentFrame]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to record command buffer!");
-        }
-        
-        // Reset the fence to unsignaled state
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
-        
-        // Submit command buffer to queue
+
+        // Record command buffer (empty for this demo)
+        vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+        recordCommandBuffer(commandBuffers[currentFrame]);
+
+        // Submit the command buffer
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        
+
+        VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = &imageAvailableSemaphores[currentFrame];
+        submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
+
+        VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
         submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = &renderFinishedSemaphores[currentFrame];
-        
+        submitInfo.pSignalSemaphores = signalSemaphores;
+
         if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
             throw std::runtime_error("Failed to submit draw command buffer!");
         }
-        
-        // Update the current frame
+
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+    void recordCommandBuffer(VkCommandBuffer commandBuffer) {
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = 0;
+        beginInfo.pInheritanceInfo = nullptr;
+
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to begin recording command buffer!");
+        }
+
+        // This is where you would record actual rendering commands
+        // For this tutorial, we're just demonstrating the command buffer infrastructure
+
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to record command buffer!");
+        }
+    }
+
+    bool checkValidationLayerSupport() {
+        uint32_t layerCount;
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+        for (const char* layerName : validationLayers) {
+            bool layerFound = false;
+
+            for (const auto& layerProperties : availableLayers) {
+                if (strcmp(layerName, layerProperties.layerName) == 0) {
+                    layerFound = true;
+                    break;
+                }
+            }
+
+            if (!layerFound) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    std::vector<const char*> getRequiredExtensions() {
+        uint32_t glfwExtensionCount = 0;
+        const char** glfwExtensions;
+        glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+        std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+
+        if (enableValidationLayers) {
+            extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
+
+        return extensions;
+    }
+
+    bool isDeviceSuitable(VkPhysicalDevice device) {
+        QueueFamilyIndices indices = findQueueFamilies(device);
+        return indices.isComplete();
+    }
+
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+        QueueFamilyIndices indices;
+
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+        int i = 0;
+        for (const auto& queueFamily : queueFamilies) {
+            if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                indices.graphicsFamily = i;
+            }
+
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+
+            if (presentSupport) {
+                indices.presentFamily = i;
+            }
+
+            if (indices.isComplete()) {
+                break;
+            }
+
+            i++;
+        }
+
+        return indices;
+    }
+
+    void cleanup() {
+        std::cout << "\n4. Cleaning up resources..." << std::endl;
+        
+        // Clean up synchronization objects
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+            vkDestroyFence(device, inFlightFences[i], nullptr);
+        }
+        std::cout << "   ✓ Synchronization objects destroyed" << std::endl;
+
+        // Clean up command pool (this also frees command buffers)
+        vkDestroyCommandPool(device, commandPool, nullptr);
+        std::cout << "   ✓ Command pool destroyed" << std::endl;
+
+        // Clean up device
+        vkDestroyDevice(device, nullptr);
+        std::cout << "   ✓ Logical device destroyed" << std::endl;
+
+        // Clean up surface
+        vkDestroySurfaceKHR(instance, surface, nullptr);
+        std::cout << "   ✓ Surface destroyed" << std::endl;
+
+        // Clean up instance
+        vkDestroyInstance(instance, nullptr);
+        std::cout << "   ✓ Vulkan instance destroyed" << std::endl;
+
+        // Clean up GLFW
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        std::cout << "   ✓ GLFW cleaned up" << std::endl;
+        
+        std::cout << "   ✓ All resources cleaned up successfully" << std::endl;
     }
 };
 
 int main() {
-    VulkanApplication app;
+    std::cout << "=== Vulkan Tutorial 02 - Core Concepts ===" << std::endl;
+    std::cout << "This tutorial demonstrates:" << std::endl;
+    std::cout << "• Vulkan instance creation and device selection" << std::endl;
+    std::cout << "• Physical and logical device management" << std::endl;
+    std::cout << "• Command buffers and queue operations" << std::endl;
+    std::cout << "• Synchronization with semaphores and fences" << std::endl;
+    std::cout << "===========================================" << std::endl;
+
+    VulkanTutorial02 app;
 
     try {
         app.run();
     } catch (const std::exception& e) {
-        std::cerr << e.what() << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }
 
+    std::cout << "\n=== Tutorial completed successfully! ===" << std::endl;
     return EXIT_SUCCESS;
 } 
